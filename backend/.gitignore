@@ -1,0 +1,11 @@
+# Carpetas de librerías instaladas (no se suben a Git)
+node_modules/
+
+# Carpeta de compilación de TypeScript
+dist/
+
+# Archivo de variables de entorno con datos sensibles/claves
+.env
+
+# Carpeta de reportes de cobertura de tests (Vitest)
+coverage/
