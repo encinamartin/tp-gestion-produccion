@@ -1,15 +1,27 @@
+// ==========================================
+// 1. IMPORTACIÓN DE MÓDULOS Y MODELOS
+// ==========================================
 import { Response } from 'express';
 import { Order } from '../models/Order';
 import { Product } from '../models/Product';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { logger } from '../utils/logger';
 
+// ==========================================
+// 2. OBTENER TODAS LAS ÓRDENES DE PRODUCCIÓN
+// ==========================================
+/**
+ * Consulta la lista completa de órdenes de producción registrado en la base de datos.
+ * Realiza .populate() sobre los productos e información de usuarios creadores/asignados.
+ */
 export const getOrders = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const orders = await Order.find()
       .populate('producto', 'nombre codigo receta')
       .populate('creadoPor', 'nombre email')
-      .populate('asignadoA', 'nombre email');
+      .populate('asignadoA', 'nombre email')
+      .sort({ createdAt: -1 });
+
     res.status(200).json(orders);
   } catch (error) {
     logger.error(`Error al obtener órdenes: ${error}`);
@@ -17,75 +29,96 @@ export const getOrders = async (req: AuthRequest, res: Response): Promise<void> 
   }
 };
 
+// ==========================================
+// 3. CREAR UNA NUEVA ÓRDEN DE PRODUCCIÓN
+// ==========================================
+/**
+ * Registra una nueva orden en estado inicial "pendiente".
+ * Asigna automáticamente la autoría al usuario autenticado (Planificador).
+ */
 export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { producto, cantidad, fechaEntregaComprometida } = req.body;
 
+    // Instancia de la nueva orden asociando el ID del usuario del Token JWT
     const newOrder = new Order({
       producto,
       cantidad,
       fechaEntregaComprometida,
-      creadoPor: req.user?.id
+      creadoPor: req.user?.id,
     });
 
     await newOrder.save();
     res.status(201).json(newOrder);
   } catch (error) {
     logger.error(`Error al crear orden de producción: ${error}`);
-    res.status(400).json({ message: 'Error al crear la orden', error });
+    res.status(400).json({ message: 'Error al crear la orden de producción', error });
   }
 };
 
+// ==========================================
+// 4. ACTUALIZAR ESTADO DE ÓRDEN Y GESTIONAR STOCK
+// ==========================================
+/**
+ * Modifica el estado operacional de la orden (pendiente -> en_proceso -> completada / cancelada).
+ * Gestiona automáticamente el consumo de insumos y el alta de producto final.
+ */
 export const updateOrderStatus = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { estado } = req.body;
 
+    // Buscar la orden por ID e incluir datos del producto
     const order = await Order.findById(id).populate('producto');
     if (!order) {
       res.status(404).json({ message: 'Orden no encontrada' });
       return;
     }
 
-    // Si la orden pasa a 'terminada', impactamos el stock
-    if (estado === 'terminada' && order.estado !== 'terminada') {
+    // ------------------------------------------------------------------
+    // FASE 1: Transición a "en_proceso" -> Descuento automático de insumos
+    // ------------------------------------------------------------------
+    if (estado === 'en_proceso' && order.estado === 'pendiente') {
       const product = await Product.findById(order.producto).populate('receta.insumo');
 
       if (product && product.receta && product.receta.length > 0) {
-        // Verificar stock de insumos
+        // A) Validar que haya stock suficiente para cada insumo de la receta (BOM)
         for (const item of product.receta) {
-          const insumo = await Product.findById(item.insumo);
+          const insumoDoc = await Product.findById(item.insumo);
           const cantidadNecesaria = item.cantidadRequerida * order.cantidad;
 
-          if (!insumo || insumo.stock < cantidadNecesaria) {
+          if (!insumoDoc || insumoDoc.stock < cantidadNecesaria) {
             res.status(400).json({
-              message: `Stock insuficiente para el insumo: ${insumo?.nombre || 'Desconocido'}`
+              message: `Stock insuficiente del insumo "${insumoDoc?.nombre || 'Desconocido'}". Requerido: ${cantidadNecesaria}, Disponible: ${insumoDoc?.stock || 0}`,
             });
             return;
           }
         }
 
-        // Descontar insumos
+        // B) Descontar el stock de insumos una vez verificados todos
         for (const item of product.receta) {
           const cantidadNecesaria = item.cantidadRequerida * order.cantidad;
           await Product.findByIdAndUpdate(item.insumo, {
-            $inc: { stock: -cantidadNecesaria }
+            $inc: { stock: -cantidadNecesaria },
           });
         }
       }
-
-      // Sumar stock al producto terminado
-      if (product) {
-        await Product.findByIdAndUpdate(product._id, {
-          $inc: { stock: order.cantidad }
-        });
-      }
     }
 
+    // ------------------------------------------------------------------
+    // FASE 2: Transición a "terminada" -> Sumar Producto Final al Stock
+    // ------------------------------------------------------------------
+    if (estado === 'terminada' && order.estado !== 'terminada') {
+      await Product.findByIdAndUpdate(order.producto, {
+        $inc: { stock: order.cantidad },
+      });
+    }
+    // Actualizar campos de estado y usuario asignado/responsable que ejecuta la acción
     order.estado = estado;
-    if (req.user?.id) order.asignadoA = req.user.id as any;
+    if (req.user?.id) {
+      order.asignadoA = req.user.id as any;
+    }
     await order.save();
-
     res.status(200).json(order);
   } catch (error) {
     logger.error(`Error al actualizar estado de la orden: ${error}`);
