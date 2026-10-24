@@ -1,4 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
+// ==========================================
+// 1. IMPORTACIONES Y DEFINICIÓN DE TIPOS
+// ==========================================
 import { createContext, useContext, useState } from 'react';
 import type { ReactNode } from 'react';
 
@@ -20,49 +23,62 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper para obtener y validar credenciales iniciales de localStorage
+const getInitialAuth = () => {
+  const savedToken = localStorage.getItem('token');
+  const savedUser = localStorage.getItem('user');
+
+  if (!savedToken || !savedUser) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    return { token: null, user: null };
+  }
+
+  try {
+    const parsedUser = JSON.parse(savedUser) as User;
+    return { token: savedToken, user: parsedUser };
+  } catch (error) {
+    console.error('Error al parsear el usuario del localStorage:', error);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    return { token: null, user: null };
+  }
+};
+
+// ==========================================
+// 2. PROVEEDOR DEL CONTEXTO (AUTHPROVIDER)
+// ==========================================
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem('token');
-  });
-
-  const [user, setUser] = useState<User | null>(() => {
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      try {
-        return JSON.parse(savedUser) as User;
-      } catch (error) {
-        console.error('Error al parsear el usuario del localStorage:', error);
-        return null;
-      }
-    }
-    return null;
-  });
-
+  // Estado inicial saneado síncronamente
+  const [authState, setAuthState] = useState(getInitialAuth);
   const [isLoading] = useState<boolean>(false);
 
+  // Función para iniciar sesión
   const login = (newToken: string, newUser: User) => {
     localStorage.setItem('token', newToken);
     localStorage.setItem('user', JSON.stringify(newUser));
-    setToken(newToken);
-    setUser(newUser);
+    setAuthState({ token: newToken, user: newUser });
   };
 
+  // Función para cerrar sesión y limpiar el almacenamiento local
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    setToken(null);
-    setUser(null);
+    setAuthState({ token: null, user: null });
   };
+
+  // Validación estricta: requiere AMBOS elementos para considerar autenticado al usuario
+  const isAuthenticated = Boolean(authState.token && authState.user);
 
   return (
     <AuthContext.Provider
       value={{
-        user,
-        token,
+        user: authState.user,
+        token: authState.token,
         isLoading,
         login,
         logout,
-        isAuthenticated: !!token,
+        isAuthenticated,
       }}
     >
       {children}
@@ -70,6 +86,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
+// ==========================================
+// 3. HOOK PERSONALIZADO (USEAUTH)
+// ==========================================
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {

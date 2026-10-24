@@ -5,7 +5,7 @@ import { useState, useEffect, type FormEvent } from 'react';
 import Navbar from '../components/Navbar';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
-import { Plus, CheckCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
+import { Plus, CheckCircle, Clock, AlertCircle, RefreshCw, Calendar } from 'lucide-react';
 
 // Interfaces tipadas
 interface Product {
@@ -17,13 +17,19 @@ interface Product {
 
 interface Order {
   _id: string;
-  producto: {
+  producto?: {
+    _id: string;
+    nombre: string;
+    codigo: string;
+  } | null;
+  productoId?: {
     _id: string;
     nombre: string;
     codigo: string;
   } | null;
   cantidad: number;
   estado: 'pendiente' | 'en_proceso' | 'terminada' | 'cancelada';
+  fechaEntregaComprometida: string;
   createdAt: string;
 }
 
@@ -39,7 +45,10 @@ export default function Orders() {
 
   // Estados para el formulario de creación (Rol Planificador)
   const [selectedProduct, setSelectedProduct] = useState('');
-  const [cantidad, setCantidad] = useState(1);
+  const [cantidad, setCantidad] = useState<number | string>(1);
+  const [fechaEntrega, setFechaEntrega] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { user } = useAuth();
@@ -95,11 +104,25 @@ export default function Orders() {
       return;
     }
 
+    const cantidadNum = Number(cantidad);
+    if (isNaN(cantidadNum) || cantidadNum <= 0) {
+      alert('La cantidad debe ser un número mayor a 0');
+      return;
+    }
+
+    if (!fechaEntrega) {
+      alert('Debe seleccionar una fecha de entrega comprometida');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
+      // Enviamos producto, cantidad y fechaEntregaComprometida requeridos
       await api.post('/orders', {
         producto: selectedProduct,
-        cantidad,
+        productoId: selectedProduct,
+        cantidad: cantidadNum,
+        fechaEntregaComprometida: fechaEntrega,
       });
       setCantidad(1);
       await fetchOrders();
@@ -179,16 +202,27 @@ export default function Orders() {
                 type="number"
                 min="1"
                 required
-                className="w-full sm:w-32 px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full sm:w-28 px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                 value={cantidad}
-                onChange={(e) => setCantidad(Number(e.target.value))}
+                onChange={(e) => setCantidad(e.target.value)}
                 placeholder="Cantidad"
               />
+
+              <div className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2 bg-white focus-within:ring-2 focus-within:ring-blue-500">
+                <Calendar size={18} className="text-gray-400" />
+                <input
+                  type="date"
+                  required
+                  className="outline-none text-sm text-gray-700 bg-transparent"
+                  value={fechaEntrega}
+                  onChange={(e) => setFechaEntrega(e.target.value)}
+                />
+              </div>
 
               <button
                 type="submit"
                 disabled={isSubmitting || products.length === 0}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg transition disabled:opacity-50"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg transition disabled:opacity-50 whitespace-nowrap"
               >
                 {isSubmitting ? 'Guardando...' : 'Emitir Orden'}
               </button>
@@ -210,71 +244,80 @@ export default function Orders() {
                   <th className="p-4">Cantidad</th>
                   <th className="p-4">Estado</th>
                   <th className="p-4">Fecha Emisión</th>
+                  <th className="p-4">Fecha Límite</th>
                   <th className="p-4 text-right">Acción</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
                 {orders.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-4 text-center text-gray-500">
+                    <td colSpan={6} className="p-4 text-center text-gray-500">
                       No hay órdenes de producción registradas.
                     </td>
                   </tr>
                 ) : (
-                  orders.map((order) => (
-                    <tr key={order._id} className="hover:bg-gray-50/50">
-                      <td className="p-4 font-medium text-gray-800">
-                        {order.producto?.nombre || 'Producto no especificado'}
-                        {order.producto?.codigo && (
-                          <span className="block text-xs text-gray-400 font-mono">
-                            {order.producto.codigo}
+                  orders.map((order) => {
+                    const prod = order.producto || order.productoId;
+                    return (
+                      <tr key={order._id} className="hover:bg-gray-50/50">
+                        <td className="p-4 font-medium text-gray-800">
+                          {prod?.nombre || 'Producto no especificado'}
+                          {prod?.codigo && (
+                            <span className="block text-xs text-gray-400 font-mono">
+                              {prod.codigo}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 font-semibold text-gray-700">{order.cantidad} u.</td>
+                        <td className="p-4">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${
+                              order.estado === 'terminada'
+                                ? 'bg-green-100 text-green-700'
+                                : order.estado === 'en_proceso'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {order.estado === 'terminada' && <CheckCircle size={14} />}
+                            {order.estado === 'en_proceso' && <Clock size={14} />}
+                            {order.estado === 'pendiente' && <AlertCircle size={14} />}
+                            {order.estado.replace('_', ' ')}
                           </span>
-                        )}
-                      </td>
-                      <td className="p-4 font-semibold text-gray-700">{order.cantidad} u.</td>
-                      <td className="p-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${
-                            order.estado === 'terminada'
-                              ? 'bg-green-100 text-green-700'
-                              : order.estado === 'en_proceso'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          {order.estado === 'terminada' && <CheckCircle size={14} />}
-                          {order.estado === 'en_proceso' && <Clock size={14} />}
-                          {order.estado === 'pendiente' && <AlertCircle size={14} />}
-                          {order.estado.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="p-4 text-gray-500">
-                        {new Date(order.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="p-4 text-right">
-                        {order.estado !== 'terminada' && (
-                          <div className="inline-flex gap-2">
-                            {order.estado === 'pendiente' && (
-                              <button
-                                onClick={() => void handleStatusChange(order._id, 'en_proceso')}
-                                className="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-xs font-medium transition"
-                              >
-                                Iniciar (Consumir Insumos)
-                              </button>
-                            )}
-                            {order.estado === 'en_proceso' && (
-                              <button
-                                onClick={() => void handleStatusChange(order._id, 'terminada')}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition"
-                              >
-                                Finalizar (Ingresar Stock)
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className="p-4 text-gray-500">
+                          {new Date(order.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="p-4 text-gray-500 font-medium">
+                          {order.fechaEntregaComprometida
+                            ? new Date(order.fechaEntregaComprometida).toLocaleDateString()
+                            : '-'}
+                        </td>
+                        <td className="p-4 text-right">
+                          {order.estado !== 'terminada' && (
+                            <div className="inline-flex gap-2">
+                              {order.estado === 'pendiente' && (
+                                <button
+                                  onClick={() => void handleStatusChange(order._id, 'en_proceso')}
+                                  className="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-xs font-medium transition"
+                                >
+                                  Iniciar (Consumir Insumos)
+                                </button>
+                              )}
+                              {order.estado === 'en_proceso' && (
+                                <button
+                                  onClick={() => void handleStatusChange(order._id, 'terminada')}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition"
+                                >
+                                  Finalizar (Ingresar Stock)
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

@@ -11,7 +11,7 @@ import { logger } from '../utils/logger';
 // 2. OBTENER TODAS LAS ÓRDENES DE PRODUCCIÓN
 // ==========================================
 /**
- * Consulta la lista completa de órdenes de producción registrado en la base de datos.
+ * Consulta la lista completa de órdenes de producción registradas en la base de datos.
  * Realiza .populate() sobre los productos e información de usuarios creadores/asignados.
  */
 export const getOrders = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -38,18 +38,31 @@ export const getOrders = async (req: AuthRequest, res: Response): Promise<void> 
  */
 export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { producto, cantidad, fechaEntregaComprometida } = req.body;
+    const { producto, productoId, cantidad, fechaEntregaComprometida } = req.body;
+    const targetProduct = producto || productoId;
 
-    // Instancia de la nueva orden asociando el ID del usuario del Token JWT
+    if (!targetProduct) {
+      res.status(400).json({ message: 'El producto es obligatorio' });
+      return;
+    }
+
+    // Instancia de la nueva orden asociando el ID del usuario
     const newOrder = new Order({
-      producto,
-      cantidad,
+      producto: targetProduct,
+      cantidad: Number(cantidad),
       fechaEntregaComprometida,
       creadoPor: req.user?.id,
     });
 
     await newOrder.save();
-    res.status(201).json(newOrder);
+
+    // Poblamos la respuesta para que retorne los datos del producto al frontend inmediatamente
+    const populatedOrder = await Order.findById(newOrder._id).populate(
+      'producto',
+      'nombre codigo receta'
+    );
+
+    res.status(201).json(populatedOrder);
   } catch (error) {
     logger.error(`Error al crear orden de producción: ${error}`);
     res.status(400).json({ message: 'Error al crear la orden de producción', error });
@@ -60,7 +73,7 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
 // 4. ACTUALIZAR ESTADO DE ÓRDEN Y GESTIONAR STOCK
 // ==========================================
 /**
- * Modifica el estado operacional de la orden (pendiente -> en_proceso -> completada / cancelada).
+ * Modifica el estado operacional de la orden (pendiente -> en_proceso -> terminada / cancelada).
  * Gestiona automáticamente el consumo de insumos y el alta de producto final.
  */
 export const updateOrderStatus = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -68,8 +81,8 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
     const { id } = req.params;
     const { estado } = req.body;
 
-    // Buscar la orden por ID e incluir datos del producto
-    const order = await Order.findById(id).populate('producto');
+    // Buscar la orden por ID
+    const order = await Order.findById(id);
     if (!order) {
       res.status(404).json({ message: 'Orden no encontrada' });
       return;
@@ -79,7 +92,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
     // FASE 1: Transición a "en_proceso" -> Descuento automático de insumos
     // ------------------------------------------------------------------
     if (estado === 'en_proceso' && order.estado === 'pendiente') {
-      const product = await Product.findById(order.producto).populate('receta.insumo');
+      const product = await Product.findById(order.producto);
 
       if (product && product.receta && product.receta.length > 0) {
         // A) Validar que haya stock suficiente para cada insumo de la receta (BOM)
@@ -89,7 +102,9 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
 
           if (!insumoDoc || insumoDoc.stock < cantidadNecesaria) {
             res.status(400).json({
-              message: `Stock insuficiente del insumo "${insumoDoc?.nombre || 'Desconocido'}". Requerido: ${cantidadNecesaria}, Disponible: ${insumoDoc?.stock || 0}`,
+              message: `Stock insuficiente del insumo "${
+                insumoDoc?.nombre || 'Desconocido'
+              }". Requerido: ${cantidadNecesaria}, Disponible: ${insumoDoc?.stock || 0}`,
             });
             return;
           }
@@ -113,13 +128,21 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
         $inc: { stock: order.cantidad },
       });
     }
-    // Actualizar campos de estado y usuario asignado/responsable que ejecuta la acción
+
+    // Actualizar campos de estado y usuario asignado/responsable
     order.estado = estado;
     if (req.user?.id) {
       order.asignadoA = req.user.id as any;
     }
+
     await order.save();
-    res.status(200).json(order);
+
+    const updatedOrder = await Order.findById(order._id)
+      .populate('producto', 'nombre codigo receta')
+      .populate('creadoPor', 'nombre email')
+      .populate('asignadoA', 'nombre email');
+
+    res.status(200).json(updatedOrder);
   } catch (error) {
     logger.error(`Error al actualizar estado de la orden: ${error}`);
     res.status(500).json({ message: 'Error interno del servidor' });

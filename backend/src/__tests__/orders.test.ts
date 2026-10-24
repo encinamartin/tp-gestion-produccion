@@ -18,7 +18,7 @@ describe('Pruebas del Módulo de Órdenes y Stock (/api/orders)', () => {
     await Product.deleteMany({ codigo: { $in: ['TEST-INS', 'TEST-PROD'] } });
     await Order.deleteMany({});
 
-    // 2. Registrar usuario planificador mediante la API (para encriptar clave con bcrypt)
+    // 2. Registrar usuario planificador
     await request(app)
       .post('/api/auth/register')
       .send({
@@ -28,7 +28,7 @@ describe('Pruebas del Módulo de Órdenes y Stock (/api/orders)', () => {
         rol: 'planificador',
       });
 
-    // 3. Login para obtener el token JWT y el ID de usuario
+    // 3. Login
     const loginRes = await request(app)
       .post('/api/auth/login')
       .send({ email: 'order_test@pyme.com', password: 'password123' });
@@ -38,7 +38,7 @@ describe('Pruebas del Módulo de Órdenes y Stock (/api/orders)', () => {
     const userObj = await User.findOne({ email: 'order_test@pyme.com' });
     userId = (userObj?._id as any).toString();
 
-    // 4. Crear un Insumo con stock inicial
+    // 4. Crear un Insumo con stock inicial = 100
     const insumo = new Product({
       nombre: 'Harina Test',
       codigo: 'TEST-INS',
@@ -49,7 +49,7 @@ describe('Pruebas del Módulo de Órdenes y Stock (/api/orders)', () => {
     await insumo.save();
     insumoId = (insumo._id as any).toString();
 
-    // 5. Crear Producto Terminado con Receta
+    // 5. Crear Producto Terminado con Receta (requiere 2kg de insumo por unidad)
     const producto = new Product({
       nombre: 'Pan Test',
       codigo: 'TEST-PROD',
@@ -84,8 +84,8 @@ describe('Pruebas del Módulo de Órdenes y Stock (/api/orders)', () => {
     expect(res.body.estado).toBe('pendiente');
   });
 
-  it('Debe descontar stock de insumos y sumar al producto al terminar la orden', async () => {
-    // Crear orden incluyendo el campo obligatorio 'creadoPor'
+  it('Debe descontar stock de insumos y sumar al producto al completar la orden', async () => {
+    // Crear la orden en estado 'pendiente'
     const order = new Order({
       producto: productoId,
       cantidad: 10,
@@ -94,20 +94,28 @@ describe('Pruebas del Módulo de Órdenes y Stock (/api/orders)', () => {
     });
     await order.save();
 
-    // Cambiar estado a 'terminada'
-    const res = await request(app)
+    // Paso 1: Transición 'pendiente' -> 'en_proceso' (AQUÍ SE DESCUENTAN INSUMOS)
+    const resInproceso = await request(app)
+      .patch(`/api/orders/${order._id}/status`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ estado: 'en_proceso' });
+
+    expect(resInproceso.status).toBe(200);
+
+    // Verificar que el insumo bajó de 100kg a 80kg (100 - (10 * 2kg))
+    const insumoProcesado = await Product.findById(insumoId);
+    expect(insumoProcesado?.stock).toBe(80);
+
+    // Paso 2: Transición 'en_proceso' -> 'terminada' (AQUÍ SE INGRESA EL PRODUCTO)
+    const resTerminada = await request(app)
       .patch(`/api/orders/${order._id}/status`)
       .set('Authorization', `Bearer ${token}`)
       .send({ estado: 'terminada' });
 
-    expect(res.status).toBe(200);
+    expect(resTerminada.status).toBe(200);
 
-    // Verificar que el insumo pasó de 100kg a 80kg (100 - (10 * 2kg))
-    const insumoActualizado = await Product.findById(insumoId);
-    expect(insumoActualizado?.stock).toBe(80);
-
-    // Verificar que el producto terminado pasó de 0 a 10 unidades
-    const productoActualizado = await Product.findById(productoId);
-    expect(productoActualizado?.stock).toBe(10);
+    // Verificar que el producto terminado subió de 0 a 10 unidades
+    const productoTerminado = await Product.findById(productoId);
+    expect(productoTerminado?.stock).toBe(10);
   });
 });

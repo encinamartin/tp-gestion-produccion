@@ -1,75 +1,90 @@
-# React + TypeScript + Vite
+<!-- ========================================== -->
+<!-- 1. ENCABEZADO Y DESCRIPCIÓN DEL PROYECTO   -->
+<!-- ========================================== -->
+# Sistema de Gestión de Producción para PyMEs (`tp-gestion-produccion`)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Sistema web integral de control de inventario, recetas de fabricación (BOM), gestión de proveedores y automatización del ciclo de vida de órdenes de producción. Diseñado para optimizar procesos industriales en pequeñas y medianas empresas.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+<!-- ========================================== -->
+<!-- 2. STACK TECNOLÓGICO UTILIZADO            -->
+<!-- ========================================== -->
+## 🛠️ Stack Tecnológico
 
-## React Compiler
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS v4, Lucide React, Axios, React Router DOM.
+- **Backend**: Node.js, Express, TypeScript, Mongoose.
+- **Base de Datos**: MongoDB (Mongoose ORM).
+- **Autenticación & Seguridad**: JWT (JSON Web Tokens), bcryptjs, Middleware de control de acceso basado en roles (RBAC).
+- **Seguimiento & Logs**: Winston Logger.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+<!-- ========================================== -->
+<!-- 3. ARQUITECTURA Y MÓDULOS DEL SISTEMA      -->
+<!-- ========================================== -->
+## 🧱 Módulos del Sistema
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 1. Autenticación y Control de Accesos (`/api/auth`)
+- Registro de usuarios e inicio de sesión seguro.
+- Gestión de roles con permisos específicos:
+  - **Planificador**: Emisión de órdenes de producción y gestión de inventario/recetas.
+  - **Operario**: Ejecución y actualización del estado de las órdenes de fabricación.
+  - **Administrador**: Gestión global del sistema.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### 2. Gestión de Productos e Insumos (`/api/products`)
+- **Insumos / Materias Primas**: Registro de stock actual, unidades de medida y alertas de stock mínimo.
+- **Productos Terminados**: Definición de recetas (Bill of Materials - BOM) asociando cantidades requeridas de materia prima por unidad producida.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### 3. Módulo de Órdenes de Producción (`/api/orders`)
+- Automatización del ciclo de vida de la orden de fabricación:
+  - **`pendiente`**: Estado inicial tras la emisión por parte del planificador.
+  - **`en_proceso`**: Transición que desencadena la **verificación y descuento automático de insumos/materias primas** del inventario según la receta (BOM).
+  - **`terminada`**: Cierre de la orden que impacta en el inventario **sumando las unidades del producto terminado** fabricado.
+  - **`cancelada`**: Aborto de la orden sin modificar existencias.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 4. Gestión de Proveedores (`/api/suppliers`)
+- Administración de catálogo de proveedores, datos de contacto e historial de compras/insumos asociados.
 
-```
+---
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+<!-- ========================================== -->
+<!-- 4. ENDPOINTS PRINCIPALES DE LA API        -->
+<!-- ========================================== -->
+## 🔌 Endpoints de la API REST
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Autenticación
+- `POST /api/auth/register` - Registro de nuevos usuarios.
+- `POST /api/auth/login` - Autenticación y generación del Token JWT.
+- `GET /api/auth/me` - Verificación de perfil y rol de usuario activo.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Inventario y Recetas
+- `GET /api/products` - Listar insumos y productos terminados.
+- `POST /api/products` - Crear insumo o producto terminado con su receta (BOM).
+- `PUT /api/products/:id` - Actualizar producto o niveles de stock.
+- `DELETE /api/products/:id` - Eliminar producto del sistema.
 
-```
+### Órdenes de Producción
+- `GET /api/orders` - Obtener listado de órdenes registradas.
+- `POST /api/orders` - Crear nueva orden de producción (*Requiere rol Planificador*).
+- `PATCH /api/orders/:id/status` - Transicionar estado de la orden (`pendiente` ➔ `en_proceso` ➔ `terminada`).
+
+### Proveedores
+- `GET /api/suppliers` - Listar proveedores registrados.
+- `POST /api/suppliers` - Crear registro de proveedor.
+
+---
+
+<!-- ========================================== -->
+<!-- 5. INSTRUCCIONES DE INSTALACIÓN Y EJECUCIÓN-->
+<!-- ========================================== -->
+## 🚀 Instalación y Ejecución Local
+
+### Prerrequisitos
+- Node.js (v18 o superior)
+- Servidor MongoDB activo (Local o MongoDB Atlas)
+
+### 1. Configuración del Backend
+```bash
+cd backend
+npm install

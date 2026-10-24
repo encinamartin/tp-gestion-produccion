@@ -1,0 +1,5 @@
+{"level":"error","message":"Error al crear orden de producción: ValidationError: fechaEntregaComprometida: Path `fechaEntregaComprometida` is required.","timestamp":"2026-10-24 10:39:15"}
+{"level":"error","message":"Error al crear orden de producción: ValidationError: fechaEntregaComprometida: Path `fechaEntregaComprometida` is required.","timestamp":"2026-10-24 10:40:55"}
+{"level":"error","message":"Error al crear orden de producción: ValidationError: fechaEntregaComprometida: Path `fechaEntregaComprometida` is required.","timestamp":"2026-10-24 10:46:31"}
+{"level":"error","message":"Error al crear orden de producción: ValidationError: fechaEntregaComprometida: Path `fechaEntregaComprometida` is required.","timestamp":"2026-10-24 10:46:41"}
+{"level":"error","message":"Error al crear orden de producción: ValidationError: fechaEntregaComprometida: Path `fechaEntregaComprometida` is required.","timestamp":"2026-10-24 10:46:48"}

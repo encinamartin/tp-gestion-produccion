@@ -1,3 +1,6 @@
+// ==========================================
+// 1. IMPORTACIONES
+// ==========================================
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -5,12 +8,23 @@ import api from '../api/axios';
 import { LogIn } from 'lucide-react';
 import axios from 'axios';
 
+// Interface para el usuario devuelto por la API
+interface ApiUser {
+  id: string;
+  nombre: string;
+  email: string;
+  rol: 'planificador' | 'operario';
+}
+
+// ==========================================
+// 2. COMPONENTE LOGIN
+// ==========================================
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -21,10 +35,17 @@ export default function Login() {
 
     try {
       const response = await api.post('/auth/login', { email, password });
-      const { token, usuario } = response.data;
-      
-      login(token, usuario);
-      navigate('/');
+
+      // Destructuramos la clave 'user' (que es la que retorna la API)
+      const { token, user } = response.data as { token: string; user: ApiUser };
+
+      if (token && user) {
+        // Guardamos las credenciales en el contexto y redireccionamos
+        login(token, user);
+        navigate('/', { replace: true });
+      } else {
+        setError('Respuesta del servidor no válida');
+      }
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.message || 'Error al iniciar sesión');
@@ -43,8 +64,12 @@ export default function Login() {
           <div className="bg-blue-100 p-3 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-4 text-blue-600">
             <LogIn size={24} />
           </div>
-          <h2 className="text-2xl font-bold text-gray-800">Gestión de Producción</h2>
-          <p className="text-gray-500 text-sm mt-1">Ingresá tus credenciales para acceder</p>
+          <h2 className="text-2xl font-bold text-gray-800">
+            Gestión de Producción
+          </h2>
+          <p className="text-gray-500 text-sm mt-1">
+            Ingresá tus credenciales para acceder
+          </p>
         </div>
 
         {error && (
@@ -55,7 +80,9 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email
+            </label>
             <input
               type="email"
               required
@@ -67,7 +94,9 @@ export default function Login() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Contraseña
+            </label>
             <input
               type="password"
               required
@@ -89,7 +118,10 @@ export default function Login() {
 
         <p className="text-center text-sm text-gray-600 mt-6">
           ¿No tenés una cuenta?{' '}
-          <Link to="/register" className="text-blue-600 font-semibold hover:underline">
+          <Link
+            to="/register"
+            className="text-blue-600 font-semibold hover:underline"
+          >
             Registrate acá
           </Link>
         </p>
